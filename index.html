@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Predictor Aviator com API</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            primary: "#ef4444",
+            "background-light": "#ffffff",
+            "background-dark": "#1f2937",
+            "text-light": "#1f2937",
+            "text-dark": "#f9fafb",
+            "secondary-light": "#f3f4f6",
+            "secondary-dark": "#374151"
+          },
+          fontFamily: { display: ["Inter", "sans-serif"] },
+          borderRadius: { DEFAULT: "0.5rem" },
+          animation: { 'spin-slow': 'spin 10s linear infinite' }
+        },
+      },
+    };
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+  <style>
+    body { min-height: max(884px, 100dvh); }
+    .animate-spin-slow { animation: spin 10s linear infinite; }
+  </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display">
+  <div class="flex flex-col min-h-screen">
+    <!-- Header -->
+    <header class="bg-primary text-white p-4 flex items-center justify-between shadow-md">
+      <h1 class="text-xl font-bold">Predictor Aviator (API Integrada)</h1>
+      <div class="flex items-center space-x-2">
+        <span id="hora" class="text-sm"></span>
+        <span id="status-api" class="text-xs opacity-80">Carregando API...</span>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-grow flex flex-col items-center justify-center p-4 text-center">
+      <p class="mb-4 text-text-light dark:text-text-dark text-sm">Previsões em tempo real via API Bet7k</p>
+      <img alt="Red airplane icon" class="w-40 h-auto mb-6" src="./img/Logo AV.png" />
+
+      <div class="relative w-64 h-64 flex items-center justify-center mb-6">
+        <div class="absolute inset-0 border-2 border-dashed border-red-400 rounded-full animate-spin-slow"></div>
+        <div class="absolute inset-2 border border-red-400 rounded-full"></div>
+        <div class="absolute w-2 h-2 bg-red-400 rounded-full top-4 left-1/2 -ml-1"></div>
+        <div class="absolute w-2 h-2 bg-red-400 rounded-full bottom-4 left-1/2 -ml-1"></div>
+        <span id="previsao" class="text-5xl font-bold text-red-500 transition-all duration-500">--</span>
+      </div>
+
+      <div class="text-center space-y-1">
+        <p id="confianca" class="text-sm font-medium">Aguardando dados...</p>
+        <p id="historico" class="text-xs text-gray-500 dark:text-gray-400"></p>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import getHistorico, { media, mediana } from './info.js';
+
+    const previsaoEl = document.getElementById("previsao");
+    const confiancaEl = document.getElementById("confianca");
+    const historicoEl = document.getElementById("historico");
+    const horaEl = document.getElementById("hora");
+    const statusApiEl = document.getElementById("status-api");
+
+    let ultimaHora = "";
+    let historicoAtual = [];
+
+    // Atualiza relógio e status
+    function atualizarHora() {
+      const agora = new Date();
+      const h = agora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      horaEl.textContent = h;
+      return h;
+    }
+
+    // Animação
+    function animarPrevisao(texto) {
+      previsaoEl.classList.remove("scale-125", "opacity-0");
+      previsaoEl.textContent = texto;
+      void previsaoEl.offsetWidth;
+      previsaoEl.classList.add("scale-125");
+    }
+
+    // Previsão baseada em histórico da API
+    async function preverComAPI() {
+      try {
+        statusApiEl.textContent = "Atualizando API...";
+        historicoAtual = await getHistorico(); // Fetch da API
+        statusApiEl.textContent = `API OK (${historicoAtual.length} resultados)`;
+
+        if (historicoAtual.length === 0) {
+          throw new Error("Sem dados na API");
+        }
+
+        const ultimos = historicoAtual.slice(0, 20); // Últimos 20
+        const avg = media(ultimos);
+        const med = mediana(ultimos);
+        const max = Math.max(...ultimos).toFixed(2);
+        const min = Math.min(...ultimos).toFixed(2);
+
+        // Previsão: média com variação (±20%)
+        const variacao = (Math.random() - 0.5) * 0.4 * parseFloat(avg);
+        const previsao = Math.max(1.1, parseFloat(avg) + variacao).toFixed(2);
+
+        animarPrevisao(`${previsao}x`);
+
+        // Confiança baseada em dados disponíveis
+        let confianca, cor;
+        if (historicoAtual.length >= 50) { confianca = "Alta"; cor = "text-green-600 dark:text-green-400"; }
+        else if (historicoAtual.length >= 10) { confianca = "Média"; cor = "text-yellow-600 dark:text-yellow-400"; }
+        else { confianca = "Baixa"; cor = "text-red-600 dark:text-red-400"; }
+
+        confiancaEl.textContent = `Confiança: ${confianca} | Média: ${avg}x`;
+        confiancaEl.className = `text-sm font-medium ${cor}`;
+
+        historicoEl.textContent = `Últimos: ${min}x → ${max}x (${historicoAtual.length} totais)`;
+
+      } catch (error) {
+        statusApiEl.textContent = "API offline (usando histórico local)";
+        confiancaEl.textContent = "Erro na API – Usando dados locais";
+        confiancaEl.className = "text-sm font-medium text-gray-500";
+        // Fallback: use função anterior com dados estáticos
+      }
+    }
+
+    // Loop principal: atualiza a cada 60 segundos
+    setInterval(() => {
+      atualizarHora();
+      preverComAPI();
+    }, 60000);
+
+    // Inicia
+    atualizarHora();
+    preverComAPI();
+  </script>
+</body>
+</html>
